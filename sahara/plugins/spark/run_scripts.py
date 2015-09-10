@@ -54,3 +54,15 @@ def start_spark_master(nn_remote, sp_home):
 def stop_spark(nn_remote, sp_home):
     nn_remote.execute_command("bash " + os.path.join(sp_home,
                                                      "sbin/stop-all.sh"))
+
+
+def start_zeppelin(zep_remote):
+    zep_remote.execute_command("sudo chown -R ubuntu:ubuntu "
+                               "/opt/incubator-zeppelin; "
+                               "sudo -u ubuntu /opt/incubator-zeppelin"
+                               "/bin/zeppelin-daemon.sh start")
+
+
+def stop_zeppelin(zep_remote):
+    zep_remote.execute_command(
+        "sudo -u ubuntu /opt/incubator-zeppelin/bin/zeppelin-daemon.sh stop")

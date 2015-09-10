@@ -48,7 +48,8 @@ class SparkProvider(p.ProvisioningPluginBase):
     def __init__(self):
         self.processes = {
             "HDFS": ["namenode", "datanode"],
-            "Spark": ["master", "slave"]
+            "Spark": ["master", "slave"],
+            "Zeppelin": ["zeppelin"]
         }
 
     def get_title(self):
@@ -109,6 +110,13 @@ class SparkProvider(p.ProvisioningPluginBase):
                                                     _("1 or more"),
                                                     sl_count)
 
+        zep_count = sum([zep.count for zep
+                         in utils.get_node_groups(cluster, "zeppelin")])
+        if zep_count > 1:
+            raise ex.InvalidComponentCountException("Zeppelin",
+                                                    _("0 or 1"),
+                                                    zep_count)
+
     def update_infra(self, cluster):
         pass
 
@@ -128,6 +136,12 @@ class SparkProvider(p.ProvisioningPluginBase):
             self._start_spark(cluster, sm_instance)
 
     @cpo.event_wrapper(
+        True, step=utils.start_process_event_message("Zeppelin"))
+    def _start_zeppelin(self, zep_instance):
+        with remote.get_remote(zep_instance) as r:
+            run.start_zeppelin(r)
+
+    @cpo.event_wrapper(
         True, step=utils.start_process_event_message("SparkMasterNode"))
     def _start_spark(self, cluster, sm_instance):
         with remote.get_remote(sm_instance) as r:
@@ -137,6 +151,7 @@ class SparkProvider(p.ProvisioningPluginBase):
     def start_cluster(self, cluster):
         nn_instance = utils.get_instance(cluster, "namenode")
         dn_instances = utils.get_instances(cluster, "datanode")
+        zep_instance = utils.get_instance(cluster, "zeppelin")
 
         # Start the name node
         self._start_namenode(nn_instance)
@@ -153,6 +168,10 @@ class SparkProvider(p.ProvisioningPluginBase):
 
         # start spark nodes
         self.start_spark(cluster)
+
+        # start zeppelin, if necessary
+        if zep_instance:
+            self._start_zeppelin(zep_instance)
 
         LOG.info(_LI('Cluster has been started successfully'))
         self._set_cluster_info(cluster)
@@ -202,6 +221,11 @@ class SparkProvider(p.ProvisioningPluginBase):
                 'sp_slaves': config_slaves,
                 'sp_defaults': config_defaults
             }
+            if "zeppelin" in ng.node_processes:
+                extra[ng.id].update({
+                    "zeppelin_setup_script":
+                        c_helper.generate_zeppelin_setup_script(sp_master)})
+
 
         if c_helper.is_data_locality_enabled(cluster):
             topology_data = th.generate_topology_map(
@@ -277,6 +301,10 @@ class SparkProvider(p.ProvisioningPluginBase):
             'authorized_keys': cluster.management_public_key
         }
 
+        if 'zeppelin_setup_script' in ng_extra:
+            files_init.update({
+                '/tmp/zeppelin-conf.sh': ng_extra['zeppelin_setup_script']})
+
         # pietro: This is required because the (secret) key is not stored in
         # .ssh which hinders password-less ssh required by spark scripts
         key_cmd = ('sudo cp $HOME/id_rsa $HOME/.ssh/; '
@@ -322,6 +350,14 @@ class SparkProvider(p.ProvisioningPluginBase):
                 r.execute_command(
                     'sudo chmod +x /etc/hadoop/topology.sh'
                 )
+
+            if 'zeppelin_setup_script' in ng_extra:
+                r.execute_command(
+                    'sudo chmod 0500 /tmp/zeppelin-conf.sh'
+                )
+                r.execute_command(
+                    'sudo /tmp/zeppelin-conf.sh '
+                    '>> /tmp/zeppelin-conf.log 2>&1')
 
             self._write_topology_data(r, cluster, extra)
             self._push_master_configs(r, cluster, extra, instance)
@@ -538,7 +574,10 @@ class SparkProvider(p.ProvisioningPluginBase):
                 int(utils.get_config_value_or_default("Spark",
                                                       "Worker webui port",
                                                       cluster))
-            ]
+            ],
+            'zeppelin': [int(utils.get_config_value_or_default("Zeppelin",
+                                                      "Web UI port",
+                                                      cluster))]
         }
 
         ports = []

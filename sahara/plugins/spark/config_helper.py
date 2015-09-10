@@ -139,6 +139,19 @@ SPARK_CONFS = {
     }
 }
 
+ZEPPELIN_CONFS = {
+    "Zeppelin": {
+        "OPTIONS": [
+            {
+                'name': 'Web UI port',
+                'description': 'Port for accessing the web UI for Zeppelin',
+                'default': 8888,
+                'priority': 1,
+            }
+        ]
+    }
+}
+
 HADOOP_CONF_DIR = "/etc/hadoop/conf"
 
 ENV_CONFS = {
@@ -212,6 +225,16 @@ def _initialise_configs():
                                     config_type="int"))
 
     for service, config_items in six.iteritems(SPARK_CONFS):
+        for item in config_items['OPTIONS']:
+            cfg = p.Config(name=item["name"],
+                           description=item["description"],
+                           default_value=item["default"],
+                           applicable_target=service,
+                           scope="cluster", is_optional=True,
+                           priority=item["priority"])
+            configs.append(cfg)
+
+    for service, config_items in six.iteritems(ZEPPELIN_CONFS):
         for item in config_items['OPTIONS']:
             cfg = p.Config(name=item["name"],
                            description=item["description"],
@@ -461,6 +484,30 @@ def generate_job_cleanup_config(cluster):
             'plugins/spark/resources/tmp-cleanup.sh.template')
         job_conf['script'] = job_cleanup_script.format(**args)
     return job_conf
+
+
+def generate_zeppelin_setup_script(sp_master):
+    script_lines = ["#!/bin/bash -x"]
+    script_lines.append(
+        "echo 'export MASTER=spark://{0}:{1}' "
+        ">> /opt/incubator-zeppelin/conf/zeppelin-env.sh".format(
+            sp_master['instance_name'],
+            utils.get_config_value_or_default(
+                "Spark", "Master port", sp_master.node_group.cluster)))
+    script_lines.append("echo 'export SPARK_HOME=/opt/spark' >> "
+                        "/opt/incubator-zeppelin/conf/zeppelin-env.sh")
+    script_lines.append("echo 'export PYTHONPATH=$SPARK_HOME/python:"
+                        "$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip:"
+                        "$PYTHONPATH' >> "
+                        "/opt/incubator-zeppelin/conf/zeppelin-env.sh")
+    script_lines.append("sed -i 's|<value>8080</value>|<value>{0}</value>|g'"
+                        " /opt/incubator-zeppelin/conf/zeppelin-site.xml"
+                        .format(utils.get_config_value_or_default(
+                            "Zeppelin",
+                            "Web UI port",
+                            sp_master.node_group.cluster)))
+    script_lines.append("chown -R ubuntu:ubuntu /opt/incubator-zeppelin")
+    return "\n".join(script_lines)
 
 
 def extract_name_values(configs):
