@@ -506,7 +506,6 @@ def generate_zeppelin_setup_script(sp_master):
                             "Zeppelin",
                             "Web UI port",
                             sp_master.node_group.cluster)))
-    script_lines.append("chown -R ubuntu:ubuntu /opt/incubator-zeppelin")
     return "\n".join(script_lines)
 
 
