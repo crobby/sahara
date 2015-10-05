@@ -190,7 +190,8 @@ class _ShareHandler(object):
 class _NFSMounter(_ShareHandler):
     """Handles mounting of a single NFS share to any number of instances."""
 
-    _DEBIAN_INSTALL = "dpkg -s nfs-common || apt-get -y install nfs-common"
+    _DEBIAN_INSTALL = "dpkg -s nfs-common || " \
+                      "(apt-get update && apt-get -y install nfs-common)"
     _REDHAT_INSTALL = "rpm -q nfs-utils || yum install -y nfs-utils"
 
     _NFS_CHECKS = {
